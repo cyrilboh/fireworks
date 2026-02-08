@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fireworks</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { background: #000; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+function rand(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+  return [f(0) * 255, f(8) * 255, f(4) * 255];
+}
+
+class Particle {
+  constructor(x, y, vx, vy, color, size, life, gravity, friction) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.color = color;
+    this.size = size;
+    this.life = life;
+    this.maxLife = life;
+    this.gravity = gravity;
+    this.friction = friction;
+    this.alpha = 1;
+    this.trail = [];
+    this.trailLength = 6;
+  }
+
+  update() {
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.trailLength) this.trail.shift();
+
+    this.vx *= this.friction;
+    this.vy *= this.friction;
+    this.vy += this.gravity;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+    this.alpha = Math.max(0, this.life / this.maxLife);
+  }
+
+  draw() {
+    for (let i = 0; i < this.trail.length; i++) {
+      const t = this.trail[i];
+      const progress = i / this.trail.length;
+      const a = progress * this.alpha * 0.5;
+      const s = this.size * progress * 0.6;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, s, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${this.color[0]|0},${this.color[1]|0},${this.color[2]|0},${a})`;
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${this.color[0]|0},${this.color[1]|0},${this.color[2]|0},${this.alpha})`;
+    ctx.fill();
+  }
+
+  get dead() { return this.life <= 0; }
+}
+
+class Firework {
+  constructor() {
+    this.x = rand(canvas.width * 0.15, canvas.width * 0.85);
+    this.y = canvas.height;
+    this.targetY = rand(canvas.height * 0.1, canvas.height * 0.4);
+    this.speed = rand(8, 13);
+    this.angle = -Math.PI / 2 + rand(-0.15, 0.15);
+    this.vx = Math.cos(this.angle) * this.speed;
+    this.vy = Math.sin(this.angle) * this.speed;
+    this.hue = rand(0, 360);
+    this.color = hslToRgb(this.hue, 80, 60);
+    this.trail = [];
+    this.trailLength = 12;
+    this.exploded = false;
+    this.size = rand(2.5, 3.5);
+  }
+
+  update() {
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.trailLength) this.trail.shift();
+    this.vy += 0.04;
+    this.x += this.vx;
+    this.y += this.vy;
+    if (this.y <= this.targetY || this.vy >= 0) {
+      this.exploded = true;
+    }
+  }
+
+  draw() {
+    for (let i = 0; i < this.trail.length; i++) {
+      const t = this.trail[i];
+      const progress = i / this.trail.length;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, this.size * progress * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,200,100,${progress * 0.7})`;
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,240,200,1)';
+    ctx.fill();
+  }
+}
+
+function createExplosion(x, y, hue) {
+  const particles = [];
+  const type = Math.random();
+
+  if (type < 0.35) {
+    // Spherical burst
+    const count = Math.floor(rand(80, 140));
+    for (let i = 0; i < count; i++) {
+      const angle = rand(0, Math.PI * 2);
+      const speed = rand(1, 7);
+      const color = hslToRgb((hue + rand(-30, 30) + 360) % 360, rand(70, 100), rand(50, 70));
+      particles.push(new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed,
+        color, rand(1.5, 3), Math.floor(rand(50, 90)), 0.03, 0.985));
+    }
+  } else if (type < 0.6) {
+    // Ring burst
+    const count = Math.floor(rand(50, 80));
+    const ringSpeed = rand(3, 6);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const speed = ringSpeed + rand(-0.5, 0.5);
+      const color = hslToRgb((hue + rand(-15, 15) + 360) % 360, 90, 60);
+      particles.push(new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed,
+        color, rand(1.5, 2.5), Math.floor(rand(50, 80)), 0.025, 0.988));
+    }
+  } else if (type < 0.8) {
+    // Double burst (two colors)
+    const hue2 = (hue + rand(90, 180)) % 360;
+    const count = Math.floor(rand(100, 150));
+    for (let i = 0; i < count; i++) {
+      const angle = rand(0, Math.PI * 2);
+      const speed = rand(1, 7);
+      const h = Math.random() > 0.5 ? hue2 : hue;
+      const color = hslToRgb((h + rand(-10, 10) + 360) % 360, rand(80, 100), rand(50, 70));
+      particles.push(new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed,
+        color, rand(1.5, 3), Math.floor(rand(50, 90)), 0.03, 0.984));
+    }
+  } else {
+    // Willow / trailing burst
+    const count = Math.floor(rand(60, 100));
+    for (let i = 0; i < count; i++) {
+      const angle = rand(0, Math.PI * 2);
+      const speed = rand(1, 5);
+      const color = hslToRgb((hue + rand(-20, 20) + 360) % 360, rand(50, 80), rand(60, 80));
+      const p = new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed,
+        color, rand(1.5, 2.5), Math.floor(rand(80, 130)), 0.05, 0.975);
+      p.trailLength = 12;
+      particles.push(p);
+    }
+  }
+
+  // Sparkle particles
+  const sparkleCount = Math.floor(rand(10, 25));
+  for (let i = 0; i < sparkleCount; i++) {
+    const angle = rand(0, Math.PI * 2);
+    const speed = rand(0.5, 3);
+    particles.push(new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed,
+      [255, 255, 255], rand(0.8, 1.5), Math.floor(rand(30, 60)), 0.02, 0.99));
+  }
+
+  return particles;
+}
+
+let fireworks = [];
+let particles = [];
+let launchTimer = 0;
+let launchInterval = 35;
+
+function update() {
+  launchTimer++;
+  if (launchTimer >= launchInterval) {
+    launchTimer = 0;
+    launchInterval = Math.floor(rand(20, 55));
+    const count = Math.random() < 0.3 ? Math.floor(rand(2, 4)) : 1;
+    for (let i = 0; i < count; i++) fireworks.push(new Firework());
+  }
+
+  for (let i = fireworks.length - 1; i >= 0; i--) {
+    fireworks[i].update();
+    if (fireworks[i].exploded) {
+      const fw = fireworks[i];
+      particles.push(...createExplosion(fw.x, fw.y, fw.hue));
+      fireworks.splice(i, 1);
+    }
+  }
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    if (particles[i].dead) particles.splice(i, 1);
+  }
+}
+
+function draw() {
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (const fw of fireworks) fw.draw();
+  for (const p of particles) p.draw();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Launch a few immediately
+for (let i = 0; i < 3; i++) fireworks.push(new Firework());
+
+loop();
+</script>
+</body>
+</html>
